@@ -4,7 +4,9 @@ export interface BuildingProps {
   type: string | null
   height: number
   levels: number
-  heightSrc: 'osm-height' | 'osm-levels' | 'estimated' | 'demo'
+  heightSrc: 'osm-height' | 'osm-levels' | 'estimated' | 'demo' | 'manual'
+  /** 名称来源：osm=楼栋自带，poi=范围内命名兴趣点回填 */
+  nameSrc?: 'osm' | 'poi'
   area: number
 }
 

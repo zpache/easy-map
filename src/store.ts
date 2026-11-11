@@ -20,6 +20,12 @@ export interface CustomCampus {
   features: BuildingFeature[]
 }
 
+export interface BuildingOverride {
+  name?: string | null
+  height?: number
+  levels?: number
+}
+
 export const store = reactive({
   campusId: CAMPUSES[0].id,
   basemapId: CAMPUSES[0].defaultBasemap,
@@ -31,6 +37,7 @@ export const store = reactive({
   selectedId: null as string | null,
   flyTarget: null as FlyTarget | null,
   customCampuses: [] as CustomCampus[],
+  overrides: {} as Record<string, BuildingOverride>,
   drawMode: false,
   drawnBbox: null as Bbox | null,
   drawMsg: ''
@@ -103,4 +110,28 @@ async function loadBuiltinCampus(campus: (typeof CAMPUSES)[number]): Promise<voi
 export function selectBuilding(osmId: string | null, fly = false): void {
   store.selectedId = osmId
   if (osmId && fly) store.flyTarget = { osmId, ts: Date.now() }
+}
+
+/** 人工修正楼栋属性（名称/高度/层数），替换数组引用以触发地图与列表重渲染 */
+export function applyBuildingOverride(osmId: string, patch: BuildingOverride): void {
+  const f = store.buildings.find((x) => x.properties.osmId === osmId)
+  if (!f) return
+  store.overrides[osmId] = { ...store.overrides[osmId], ...patch }
+  if (patch.levels !== undefined && Number.isFinite(patch.levels) && patch.levels > 0) {
+    f.properties.levels = Math.round(patch.levels)
+    if (patch.height === undefined) {
+      f.properties.height = Math.round(f.properties.levels * 3.2 * 10) / 10
+      f.properties.heightSrc = 'manual'
+    }
+  }
+  if (patch.height !== undefined && Number.isFinite(patch.height) && patch.height > 0) {
+    f.properties.height = Math.round(patch.height * 10) / 10
+    f.properties.heightSrc = 'manual'
+    f.properties.levels = Math.max(1, Math.round(patch.height / 3.2))
+  }
+  if (patch.name !== undefined) {
+    f.properties.name = patch.name
+    f.properties.nameSrc = 'osm'
+  }
+  store.buildings = store.buildings.slice()
 }

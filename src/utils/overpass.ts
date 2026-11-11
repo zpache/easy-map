@@ -1,4 +1,5 @@
 import type { BuildingFeature, Bbox, Coord } from '@/types'
+import { bboxOf } from '@/utils/coords'
 
 const OVERPASS_ENDPOINTS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
@@ -15,11 +16,26 @@ interface OverpassGeometry {
 }
 
 interface OverpassElement {
-  type: 'way' | 'relation'
+  type: 'node' | 'way' | 'relation'
   id: number
+  lat?: number
+  lon?: number
   tags?: Record<string, string>
   geometry?: OverpassGeometry[]
   members?: { type: string; role: string; geometry?: OverpassGeometry[] }[]
+}
+
+interface PoiPoint {
+  lng: number
+  lat: number
+  name: string
+  prio: number
+}
+
+function poiPriority(tags: Record<string, string>): number {
+  if (tags.office || tags.company || tags.building) return 3
+  if (tags.shop || tags.amenity || tags.tourism || tags.craft) return 2
+  return 1
 }
 
 function parseNum(raw: unknown): number | null {
@@ -111,9 +127,56 @@ function featureFromElement(el: OverpassElement): BuildingFeature | null {
   }
 }
 
-/** 运行时从 Overpass API 抓取 bbox 内建筑（多端点重试） */
+function pointInRing(lng: number, lat: number, ring: Coord[]): boolean {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0]
+    const yi = ring[i][1]
+    const xj = ring[j][0]
+    const yj = ring[j][1]
+    if (yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) {
+      inside = !inside
+    }
+  }
+  return inside
+}
+
+function pointInFeature(lng: number, lat: number, f: BuildingFeature): boolean {
+  if (f.geometry.type === 'Polygon') {
+    return f.geometry.coordinates.some((r) => pointInRing(lng, lat, r))
+  }
+  return f.geometry.coordinates.some((poly) => poly.some((r) => pointInRing(lng, lat, r)))
+}
+
+/** 未命名楼栋：用落在其轮廓内的命名 POI 回填名称（公司/办公优先） */
+function enrichNames(features: BuildingFeature[], pois: PoiPoint[]): void {
+  for (const f of features) {
+    if (f.properties.name) continue
+    const [minLng, minLat, maxLng, maxLat] = bboxOf(f)
+    let best: PoiPoint | null = null
+    for (const p of pois) {
+      if (p.lng < minLng || p.lng > maxLng || p.lat < minLat || p.lat > maxLat) continue
+      if (!pointInFeature(p.lng, p.lat, f)) continue
+      if (!best || p.prio > best.prio) best = p
+    }
+    if (best) {
+      f.properties.name = best.name
+      f.properties.nameSrc = 'poi'
+    }
+  }
+}
+
+/**
+ * 运行时从 Overpass API 抓取 bbox 内建筑（多端点重试）。
+ * 同时抓取范围内带名称的 POI 节点，用于给无名楼栋回填名称。
+ */
 export async function fetchBuildingsByBbox(bbox: Bbox): Promise<BuildingFeature[]> {
-  const q = `[out:json][timeout:60];(way["building"](${bbox.join(',')});relation["building"](${bbox.join(',')}););out geom qt;`
+  const b = bbox.join(',')
+  const q =
+    `[out:json][timeout:60];(way["building"](${b});relation["building"](${b});` +
+    `node["name"]["office"](${b});node["name"]["company"](${b});node["name"]["shop"](${b});` +
+    `node["name"]["amenity"](${b});node["name"]["building"](${b});node["name"]["tourism"](${b});` +
+    `node["name"]["craft"](${b}););out geom qt;`
   let lastErr: unknown
   for (const endpoint of OVERPASS_ENDPOINTS) {
     try {
@@ -124,9 +187,16 @@ export async function fetchBuildingsByBbox(bbox: Bbox): Promise<BuildingFeature[
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const json = (await res.json()) as { elements?: OverpassElement[] }
-      return (json.elements ?? [])
+      const elements = json.elements ?? []
+      const pois: PoiPoint[] = elements
+        .filter((e) => e.type === 'node' && e.tags?.name && e.lat != null && e.lon != null)
+        .map((e) => ({ lng: e.lon as number, lat: e.lat as number, name: e.tags?.name ?? '', prio: poiPriority(e.tags ?? {}) }))
+        .filter((p) => p.name)
+      const features = elements
         .map(featureFromElement)
         .filter((f): f is BuildingFeature => f !== null)
+      enrichNames(features, pois)
+      return features
     } catch (err) {
       lastErr = err
       await new Promise((r) => setTimeout(r, 1200))

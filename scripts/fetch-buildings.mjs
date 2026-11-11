@@ -24,6 +24,12 @@ const CAMPUSES = [
 const LEVEL_HEIGHT = 3.2
 const MIN_AREA_M2 = 80
 
+function poiPriority(tags) {
+  if (tags.office || tags.company || tags.building) return 3
+  if (tags.shop || tags.amenity || tags.tourism || tags.craft) return 2
+  return 1
+}
+
 function parseNum(raw) {
   const m = /([\d.]+)/.exec(String(raw ?? ''))
   return m ? parseFloat(m[1]) : null
@@ -75,6 +81,63 @@ function elementToPolygon(el) {
   return null
 }
 
+function pointInRing(lng, lat, ring) {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0]
+    const yi = ring[i][1]
+    const xj = ring[j][0]
+    const yj = ring[j][1]
+    if (yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) {
+      inside = !inside
+    }
+  }
+  return inside
+}
+
+function pointInFeature(lng, lat, f) {
+  if (f.geometry.type === 'Polygon') {
+    return f.geometry.coordinates.some((r) => pointInRing(lng, lat, r))
+  }
+  return f.geometry.coordinates.some((poly) => poly.some((r) => pointInRing(lng, lat, r)))
+}
+
+function bboxOf(f) {
+  let minLng = 180
+  let minLat = 90
+  let maxLng = -180
+  let maxLat = -90
+  const walk = (ring) => {
+    for (const [lng, lat] of ring) {
+      if (lng < minLng) minLng = lng
+      if (lat < minLat) minLat = lat
+      if (lng > maxLng) maxLng = lng
+      if (lat > maxLat) maxLat = lat
+    }
+  }
+  if (f.geometry.type === 'Polygon') f.geometry.coordinates.forEach(walk)
+  else f.geometry.coordinates.forEach((poly) => poly.forEach(walk))
+  return [minLng, minLat, maxLng, maxLat]
+}
+
+/** 未命名楼栋：用落在其轮廓内的命名 POI 回填名称（公司/办公优先） */
+function enrichNames(features, pois) {
+  for (const f of features) {
+    if (f.properties.name) continue
+    const [minLng, minLat, maxLng, maxLat] = bboxOf(f)
+    let best = null
+    for (const p of pois) {
+      if (p.lng < minLng || p.lng > maxLng || p.lat < minLat || p.lat > maxLat) continue
+      if (!pointInFeature(p.lng, p.lat, f)) continue
+      if (!best || p.prio > best.prio) best = p
+    }
+    if (best) {
+      f.properties.name = best.name
+      f.properties.nameSrc = 'poi'
+    }
+  }
+}
+
 function featureFromElement(el) {
   const rings = elementToPolygon(el)
   if (!rings) return null
@@ -117,7 +180,12 @@ function featureFromElement(el) {
 }
 
 async function queryOverpass(bbox) {
-  const q = `[out:json][timeout:90];(way["building"](${bbox.join(',')});relation["building"](${bbox.join(',')}););out geom qt;`
+  const b = bbox.join(',')
+  const q =
+    `[out:json][timeout:90];(way["building"](${b});relation["building"](${b});` +
+    `node["name"]["office"](${b});node["name"]["company"](${b});node["name"]["shop"](${b});` +
+    `node["name"]["amenity"](${b});node["name"]["building"](${b});node["name"]["tourism"](${b});` +
+    `node["name"]["craft"](${b}););out geom qt;`
   let lastErr
   for (const endpoint of OVERPASS_ENDPOINTS) {
     try {
@@ -144,7 +212,11 @@ async function queryOverpass(bbox) {
 async function fetchCampus(campus) {
   console.log(`抓取 ${campus.name} (bbox=${campus.bbox.join(',')}) ...`)
   const elements = await queryOverpass(campus.bbox)
+  const pois = elements
+    .filter((e) => e.type === 'node' && e.tags?.name && e.lat != null && e.lon != null)
+    .map((e) => ({ lng: e.lon, lat: e.lat, name: e.tags.name, prio: poiPriority(e.tags) }))
   const features = elements.map(featureFromElement).filter(Boolean)
+  enrichNames(features, pois)
   const fc = {
     type: 'FeatureCollection',
     meta: { campus: campus.id, name: campus.name, source: 'OpenStreetMap', fetchedAt: new Date().toISOString() },
@@ -155,7 +227,11 @@ async function fetchCampus(campus) {
   writeFileSync(out, JSON.stringify(fc))
   const withName = features.filter((f) => f.properties.name).length
   const withOsmH = features.filter((f) => f.properties.heightSrc === 'osm-height').length
-  console.log(`  ${campus.name}: ${features.length} 栋（有名字 ${withName}，有 OSM 高度 ${withOsmH}）→ ${out}`)
+  const withLevels = features.filter((f) => f.properties.heightSrc === 'osm-levels').length
+  const viaPoi = features.filter((f) => f.properties.nameSrc === 'poi').length
+  console.log(
+    `  ${campus.name}: ${features.length} 栋（有名字 ${withName}，其中 POI 回填 ${viaPoi}；OSM 实测高度 ${withOsmH}，层数推算 ${withLevels}）→ ${out}`
+  )
 }
 
 const args = process.argv.slice(2)

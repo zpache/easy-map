@@ -189,22 +189,30 @@ function flyToBuilding(f: BuildingFeature) {
   viewBbox(bboxOf(transformed(f)), { left: 340, right: 360, top: 80, bottom: 80 })
 }
 
+const LABEL_ZOOM_MIN = 12
+const LABEL_MAX = 200
+
 function syncLabels() {
   if (!map) return
   markers.forEach((m) => m.remove())
   markers = []
-  if (!store.showLabels || map.getZoom() < 14.5) return
+  if (!store.showLabels || map.getZoom() < LABEL_ZOOM_MIN) return
+  const b = map.getBounds()
+  const west = b.getWest() - (b.getEast() - b.getWest()) * 0.25
+  const east = b.getEast() + (b.getEast() - b.getWest()) * 0.25
+  const south = b.getSouth() - (b.getNorth() - b.getSouth()) * 0.25
+  const north = b.getNorth() + (b.getNorth() - b.getSouth()) * 0.25
   for (const f of store.buildings) {
+    if (markers.length >= LABEL_MAX) break
     if (!f.properties.name) continue
-    const b = bboxOf(transformed(f))
+    const bb = bboxOf(transformed(f))
+    const lng = (bb[0] + bb[2]) / 2
+    const lat = (bb[1] + bb[3]) / 2
+    if (lng < west || lng > east || lat < south || lat > north) continue
     const el = document.createElement('div')
     el.className = 'bldg-label'
     el.textContent = f.properties.name
-    markers.push(
-      new maplibregl.Marker({ element: el, anchor: 'center' })
-        .setLngLat([(b[0] + b[2]) / 2, (b[1] + b[3]) / 2])
-        .addTo(map)
-    )
+    markers.push(new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([lng, lat]).addTo(map))
   }
 }
 

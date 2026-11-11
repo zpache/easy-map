@@ -323,3 +323,39 @@ body {
   font-size: 13px;
   color: #7ee2a8;
 }
+
+.edit-name {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  background: #122441;
+  border: 1px solid #24406b;
+  border-radius: 6px;
+  color: #eaf3ff;
+  font-size: 13px;
+  outline: none;
+}
+
+.edit-name:focus {
+  border-color: #2563eb;
+}
+
+.edit-num {
+  width: 72px;
+  height: 24px;
+  padding: 0 6px;
+  background: #122441;
+  border: 1px solid #24406b;
+  border-radius: 6px;
+  color: #eaf3ff;
+  font-size: 12px;
+  outline: none;
+  text-align: right;
+}
+
+.edit-btn {
+  width: 100%;
+  flex: none;
+  margin-bottom: 12px;
+}
