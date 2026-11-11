@@ -10,6 +10,9 @@ export interface BuildingProps {
 
 export type Coord = [number, number]
 
+/** Overpass bbox 顺序：[南, 西, 北, 东] */
+export type Bbox = [number, number, number, number]
+
 export interface BuildingFeature {
   type: 'Feature'
   geometry:

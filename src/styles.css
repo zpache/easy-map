@@ -186,3 +186,140 @@ body {
   white-space: nowrap;
   pointer-events: none;
 }
+
+.tb-btn {
+  height: 30px;
+  padding: 0 12px;
+  background: #122441;
+  border: 1px solid #24406b;
+  border-radius: 8px;
+  color: #9fc0e8;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tb-btn:hover {
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.custom-panel {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 320px;
+  padding: 14px;
+  background: rgba(15, 29, 51, 0.97);
+  border: 1px solid #24406b;
+  border-radius: 10px;
+  backdrop-filter: blur(4px);
+  z-index: 8;
+}
+
+.custom-panel h3 {
+  font-size: 14px;
+  color: #eaf3ff;
+}
+
+.fld {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: #8fa9cc;
+}
+
+.fld > span {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.fld input {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  background: #122441;
+  border: 1px solid #24406b;
+  border-radius: 8px;
+  color: #dbe7f5;
+  font-size: 13px;
+  outline: none;
+}
+
+.fld input:focus {
+  border-color: #2563eb;
+}
+
+.bbox-line {
+  padding: 7px 10px;
+  background: #122441;
+  border: 1px solid #24406b;
+  border-radius: 8px;
+  color: #cfe3ff;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+
+.btn {
+  flex: 1;
+  height: 32px;
+  background: #122441;
+  border: 1px solid #24406b;
+  border-radius: 8px;
+  color: #9fc0e8;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.btn.primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.btn.primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn.active {
+  border-color: #409eff;
+  color: #409eff;
+}
+
+.hint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #5f7ba1;
+  line-height: 1.7;
+  word-break: break-all;
+}
+
+.hint code {
+  color: #7fc4ff;
+}
+
+.err {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #ff8f8f;
+  line-height: 1.6;
+}
+
+.ok {
+  margin: 6px 0 10px;
+  font-size: 13px;
+  color: #7ee2a8;
+}

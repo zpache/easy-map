@@ -4,15 +4,41 @@ import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { buildStyle, getBasemap } from '@/config/basemaps'
 import { selectBuilding, store } from '@/store'
-import type { BuildingFeature } from '@/types'
+import type { BuildingFeature, Bbox } from '@/types'
 import { bboxOf, transformFeature } from '@/utils/coords'
 
 let map: maplibregl.Map | null = null
 let pendingFit = false
 let pendingSync = false
 let markers: maplibregl.Marker[] = []
+let drawing = false
+let drawStart: [number, number] | null = null
 const containerEl = ref<HTMLDivElement | null>(null)
 const hoverId = ref<string | null>(null)
+
+function rectRing(a: [number, number], b: [number, number]): number[][] {
+  return [
+    [a[0], a[1]],
+    [b[0], a[1]],
+    [b[0], b[1]],
+    [a[0], b[1]],
+    [a[0], a[1]]
+  ]
+}
+
+function rectToBbox(a: [number, number], b: [number, number]): Bbox {
+  return [Math.min(a[1], b[1]), Math.min(a[0], b[0]), Math.max(a[1], b[1]), Math.max(a[0], b[0])]
+}
+
+function setRectData(ring: number[][] | null) {
+  if (!map) return
+  const src = map.getSource('draw-rect') as maplibregl.GeoJSONSource | undefined
+  if (!src) return
+  const data = ring
+    ? { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring] } }
+    : { type: 'FeatureCollection', features: [] }
+  src.setData(data as never)
+}
 
 function currentBasemap() {
   return getBasemap(store.basemapId)
@@ -104,6 +130,24 @@ function syncAll() {
     } as never)
   }
   applyFilters()
+  if (!map.getSource('draw-rect')) {
+    map.addSource('draw-rect', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] } as never
+    })
+    map.addLayer({
+      id: 'draw-rect-fill',
+      type: 'fill',
+      source: 'draw-rect',
+      paint: { 'fill-color': '#409eff', 'fill-opacity': 0.14 }
+    } as never)
+    map.addLayer({
+      id: 'draw-rect-line',
+      type: 'line',
+      source: 'draw-rect',
+      paint: { 'line-color': '#409eff', 'line-width': 2 }
+    } as never)
+  }
 }
 
 /** 根据外接框计算适合的 center/zoom，再以固定俯仰角飞行 */
@@ -192,7 +236,7 @@ onMounted(() => {
   })
   map.on('moveend', syncLabels)
   map.on('mousemove', (e) => {
-    if (!map || !map.getLayer('bldg-base')) return
+    if (!map || store.drawMode || !map.getLayer('bldg-base')) return
     const feats = map.queryRenderedFeatures(e.point, { layers: ['bldg-base'] })
     const id = (feats[0]?.properties as { osmId?: string } | undefined)?.osmId ?? null
     if (id !== hoverId.value) {
@@ -201,10 +245,37 @@ onMounted(() => {
     }
   })
   map.on('click', (e) => {
-    if (!map || !map.getLayer('bldg-base')) return
+    if (!map || store.drawMode || !map.getLayer('bldg-base')) return
     const feats = map.queryRenderedFeatures(e.point, { layers: ['bldg-base'] })
     const id = (feats[0]?.properties as { osmId?: string } | undefined)?.osmId ?? null
     selectBuilding(id)
+  })
+  map.on('mousedown', (e) => {
+    if (!store.drawMode || !map) return
+    drawing = true
+    drawStart = [e.lngLat.lng, e.lngLat.lat]
+  })
+  map.on('mousemove', (e) => {
+    if (!drawing || !drawStart || !map) return
+    setRectData(rectRing(drawStart, [e.lngLat.lng, e.lngLat.lat]))
+  })
+  map.on('mouseup', (e) => {
+    if (!drawing || !map) return
+    drawing = false
+    const start = drawStart
+    drawStart = null
+    if (!start) return
+    const bbox = rectToBbox(start, [e.lngLat.lng, e.lngLat.lat])
+    const latC = (bbox[0] + bbox[2]) / 2
+    const wM = (bbox[3] - bbox[1]) * 111320 * Math.cos((latC * Math.PI) / 180)
+    const hM = (bbox[2] - bbox[0]) * 110540
+    if (Math.min(wM, hM) < 150) {
+      store.drawMsg = '框选范围太小，请框选至少 150 米见方的区域'
+      return
+    }
+    store.drawMsg = ''
+    store.drawnBbox = bbox
+    store.drawMode = false
   })
 })
 
@@ -216,6 +287,22 @@ onBeforeUnmount(() => {
 })
 
 watch(() => store.basemapId, () => map?.setStyle(buildStyle(currentBasemap()) as never))
+watch(
+  () => store.drawMode,
+  (on) => {
+    if (!map) return
+    map.getCanvas().style.cursor = on ? 'crosshair' : ''
+    if (on) {
+      map.dragPan.disable()
+      drawing = false
+      drawStart = null
+      setRectData(null)
+      store.drawMsg = ''
+    } else {
+      map.dragPan.enable()
+    }
+  }
+)
 watch(
   () => store.buildings,
   () => {

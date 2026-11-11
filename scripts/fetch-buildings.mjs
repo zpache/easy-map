@@ -159,9 +159,29 @@ async function fetchCampus(campus) {
 }
 
 const args = process.argv.slice(2)
-const targets = args.length ? CAMPUSES.filter((c) => args.includes(c.id)) : CAMPUSES
+const opts = {}
+const positional = []
+for (const a of args) {
+  const m = /^--(\w+)=(.*)$/.exec(a)
+  if (m) opts[m[1]] = m[2]
+  else positional.push(a)
+}
+
+let targets
+if (opts.bbox) {
+  const bbox = String(opts.bbox)
+    .split(',')
+    .map(Number)
+  if (bbox.length !== 4 || bbox.some((n) => Number.isNaN(n))) {
+    console.error('--bbox 需要逗号分隔的 4 个数字：南,西,北,东')
+    process.exit(1)
+  }
+  targets = [{ id: opts.id || 'custom', name: opts.name || '自定义园区', bbox }]
+} else {
+  targets = positional.length ? CAMPUSES.filter((c) => positional.includes(c.id)) : CAMPUSES
+}
 if (!targets.length) {
-  console.error(`未找到园区，可用: ${CAMPUSES.map((c) => c.id).join(', ')}`)
+  console.error(`未找到园区，可用: ${CAMPUSES.map((c) => c.id).join(', ')}，或用 --bbox=南,西,北,东 指定范围`)
   process.exit(1)
 }
 for (const campus of targets) {
