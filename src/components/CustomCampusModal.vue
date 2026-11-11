@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { addCustomCampus, selectBuilding, store, switchCampus } from '@/store'
+import { geocode, type GeoResult } from '@/utils/geocode'
 import { fetchBuildingsByBbox } from '@/utils/overpass'
 
 const emit = defineEmits<{ close: [] }>()
@@ -9,6 +10,32 @@ const name = ref('')
 const status = ref<'idle' | 'drawing' | 'fetching' | 'done' | 'error'>('idle')
 const errorMsg = ref('')
 const result = ref<{ id: string; count: number } | null>(null)
+
+const query = ref('')
+const searching = ref(false)
+const geoResults = ref<GeoResult[]>([])
+const searchError = ref('')
+
+async function doSearch() {
+  const q = query.value.trim()
+  if (!q || searching.value) return
+  searching.value = true
+  searchError.value = ''
+  try {
+    geoResults.value = await geocode(q)
+    if (!geoResults.value.length) searchError.value = '未找到该地址，换个关键词试试'
+  } catch (e) {
+    searchError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    searching.value = false
+  }
+}
+
+function pickResult(r: GeoResult) {
+  geoResults.value = []
+  query.value = r.name
+  store.locateTarget = { lng: r.lng, lat: r.lat, bbox: r.bbox, ts: Date.now() }
+}
 
 const bboxText = computed(() => {
   const b = store.drawnBbox
@@ -103,6 +130,25 @@ onBeforeUnmount(() => {
     </template>
 
     <template v-else>
+      <div class="fld">
+        <span>地址定位</span>
+        <div class="search-row">
+          <input
+            v-model="query"
+            placeholder="输入地址或地标，如：望京 SOHO"
+            @keyup.enter="doSearch"
+          />
+          <button class="btn search-btn" :disabled="searching || !query.trim()" @click="doSearch">
+            {{ searching ? '搜索中…' : '搜索' }}
+          </button>
+        </div>
+        <div v-if="geoResults.length" class="geo-results">
+          <button v-for="(r, i) in geoResults" :key="i" class="geo-item" @click="pickResult(r)">
+            <b>{{ r.name }}</b><i>{{ r.detail }}</i>
+          </button>
+        </div>
+        <p v-if="searchError" class="err">{{ searchError }}</p>
+      </div>
       <label class="fld">
         <span>园区名称</span>
         <input v-model="name" placeholder="例如：望京研发园" />

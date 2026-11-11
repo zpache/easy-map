@@ -61,7 +61,8 @@ export const store = reactive({
   overrides: loadOverrides(),
   drawMode: false,
   drawnBbox: null as Bbox | null,
-  drawMsg: ''
+  drawMsg: '',
+  locateTarget: null as { lng: number; lat: number; bbox?: Bbox; ts: number } | null
 })
 
 export interface CampusOption {

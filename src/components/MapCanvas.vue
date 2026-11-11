@@ -334,6 +334,19 @@ watch(
     }
   }
 )
+watch(
+  () => store.locateTarget,
+  (t) => {
+    if (!t || !map) return
+    if (t.bbox) {
+      // store.bbox 是 [南,西,北,东]，viewBbox 需要 [minLng,minLat,maxLng,maxLat]
+      const b = t.bbox
+      viewBbox([b[1], b[0], b[3], b[2]], { left: 340, right: 360, top: 80, bottom: 80 })
+    } else {
+      map.flyTo({ center: [t.lng, t.lat], zoom: 15.5, duration: 1500, essential: true })
+    }
+  }
+)
 </script>
 
 <template>
