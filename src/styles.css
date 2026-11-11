@@ -125,12 +125,138 @@ body {
   top: 16px;
   right: 16px;
   width: 280px;
+  max-height: calc(100% - 32px);
   padding: 14px;
   background: rgba(15, 29, 51, 0.95);
   border: 1px solid #24406b;
   border-radius: 10px;
   backdrop-filter: blur(4px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   z-index: 5;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.tag {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  background: #16345c;
+  color: #7fc4ff;
+}
+
+.tag.ghost {
+  background: transparent;
+  border: 1px solid #24406b;
+  color: #8fa9cc;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  margin-bottom: 12px;
+}
+
+.cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  border-bottom: 1px dashed #1d3252;
+  padding: 4px 0;
+}
+
+.cell .k {
+  color: #7d97ba;
+}
+
+.cell .v {
+  color: #eaf3ff;
+}
+
+.sec-title {
+  margin: 4px 0 8px;
+  font-size: 12px;
+  color: #8fa9cc;
+  font-weight: 600;
+}
+
+.sec-flex {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tenants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.tenant {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #122441;
+  border: 1px solid #24406b;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.tenant b {
+  color: #cfe3ff;
+  font-weight: 500;
+}
+
+.tenant i {
+  font-style: normal;
+  color: #6f8db6;
+}
+
+.floors {
+  max-height: 38vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.floor {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.floor:nth-child(odd) {
+  background: #101f38;
+}
+
+.f-no {
+  width: 34px;
+  flex-shrink: 0;
+  color: #6f8db6;
+  font-variant-numeric: tabular-nums;
+}
+
+.f-tenant {
+  color: #cfe3ff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.f-tenant.vacant {
+  color: #4e688a;
 }
 
 .card-head {
@@ -369,9 +495,7 @@ body {
 .row-btns {
   display: flex;
   gap: 6px;
-}
-
-.mini-btn {
+}.mini-btn {
   padding: 3px 8px;
   background: #122441;
   border: 1px solid #24406b;
