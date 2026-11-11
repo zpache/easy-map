@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { selectBuilding, store } from '@/store'
 import type { BuildingFeature } from '@/types'
-import { getBuildingInfo } from '@/utils/mockData'
+import { effectiveFloors, tenantsFromFloors } from '@/utils/mockData'
 
 const filtered = computed(() => {
   const q = store.searchText.trim().toLowerCase()
@@ -10,7 +10,9 @@ const filtered = computed(() => {
   return store.buildings.filter(
     (f) =>
       (f.properties.name ?? '').toLowerCase().includes(q) ||
-      getBuildingInfo(f).tenants.some((t) => t.name.toLowerCase().includes(q))
+      tenantsFromFloors(effectiveFloors(f, store.overrides[f.properties.osmId]?.floors)).some((t) =>
+        t.name.toLowerCase().includes(q)
+      )
   )
 })
 

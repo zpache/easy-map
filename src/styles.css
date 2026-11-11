@@ -359,3 +359,57 @@ body {
   flex: none;
   margin-bottom: 12px;
 }
+
+.sec-flex {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.row-btns {
+  display: flex;
+  gap: 6px;
+}
+
+.mini-btn {
+  padding: 3px 8px;
+  background: #122441;
+  border: 1px solid #24406b;
+  border-radius: 6px;
+  color: #9fc0e8;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mini-btn.primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.mini-btn:hover {
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.edit-floor {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  background: #122441;
+  border: 1px solid #24406b;
+  border-radius: 6px;
+  color: #eaf3ff;
+  font-size: 12px;
+  outline: none;
+}
+
+.edit-floor:focus {
+  border-color: #2563eb;
+}
+
+.empty-inline {
+  font-size: 11px;
+  color: #54708f;
+}

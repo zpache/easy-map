@@ -74,13 +74,14 @@ function usageOf(f: BuildingFeature): string {
 
 const cache = new Map<string, BuildingInfo>()
 
-/** 按楼栋 ID 确定性生成管理侧演示数据（同一楼栋多次取值一致） */
+/** 按楼栋 ID + 名称 + 层数确定性生成管理侧演示数据（属性被修正后缓存自动失效） */
 export function getBuildingInfo(f: BuildingFeature): BuildingInfo {
-  const key = f.properties.osmId
+  const p = f.properties
+  const key = `${p.osmId}|${p.name ?? ''}|${p.levels}`
   const hit = cache.get(key)
   if (hit) return hit
 
-  const rng = mulberry32(hashCode(key))
+  const rng = mulberry32(hashCode(p.osmId))
   const builtYear = 2008 + Math.floor(rng() * 16)
   const tenantCount = 1 + Math.floor(rng() * 4)
   const start = Math.floor(rng() * COMPANIES.length)
@@ -98,4 +99,28 @@ export function getBuildingInfo(f: BuildingFeature): BuildingInfo {
   const info: BuildingInfo = { usage: usageOf(f), builtYear, tenants, floors }
   cache.set(key, info)
   return info
+}
+
+const INDUSTRY_BY_NAME = new Map(COMPANIES.map((t) => [t.name, t.industry]))
+
+/** 应用楼层租户人工修正后的有效楼层列表 */
+export function effectiveFloors(
+  f: BuildingFeature,
+  floorOverrides?: Record<string, string | null>
+): FloorInfo[] {
+  const base = getBuildingInfo(f).floors
+  if (!floorOverrides) return base
+  return base.map((fl) =>
+    fl.floor in floorOverrides ? { floor: fl.floor, tenant: floorOverrides[String(fl.floor)] ?? null } : fl
+  )
+}
+
+/** 从有效楼层推导入驻企业（按名称去重，未知企业行业记为“其他”） */
+export function tenantsFromFloors(floors: FloorInfo[]): Tenant[] {
+  const seen = new Map<string, Tenant>()
+  for (const fl of floors) {
+    if (!fl.tenant || seen.has(fl.tenant)) continue
+    seen.set(fl.tenant, { name: fl.tenant, industry: INDUSTRY_BY_NAME.get(fl.tenant) ?? '其他' })
+  }
+  return [...seen.values()]
 }
