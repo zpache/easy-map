@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { addCustomCampus, selectBuilding, store, switchCampus } from '@/store'
 import { geocode, type GeoResult } from '@/utils/geocode'
 import { fetchBuildingsByBbox } from '@/utils/overpass'
@@ -103,6 +103,14 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
+
+watch(
+  () => store.drawMode,
+  (on) => {
+    if (!on && status.value === 'drawing') status.value = 'idle'
+  }
+)
+
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   store.drawMode = false

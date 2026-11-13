@@ -2,10 +2,78 @@ import type { BuildingFeature, Bbox, Coord } from '@/types'
 import { bboxOf } from '@/utils/coords'
 
 const OVERPASS_ENDPOINTS = [
+  'https://overpass.osm.ch/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
   'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter'
+  'https://overpass.private.coffee/api/interpreter'
 ]
+
+const PREFERRED_KEY = 'easy-map-overpass-endpoint'
+const CACHE_PREFIX = 'easy-map-bbox-cache-'
+const CACHE_TTL = 24 * 3600 * 1000
+const CACHE_MAX = 3
+const REQUEST_TIMEOUT = 40_000
+const STAGGER_MS = 2_500
+
+function orderedEndpoints(): string[] {
+  try {
+    const preferred = localStorage.getItem(PREFERRED_KEY)
+    if (preferred && OVERPASS_ENDPOINTS.includes(preferred)) {
+      return [preferred, ...OVERPASS_ENDPOINTS.filter((e) => e !== preferred)]
+    }
+  } catch {
+    /* ignore */
+  }
+  return OVERPASS_ENDPOINTS
+}
+
+function bboxCacheKey(bbox: Bbox): string {
+  return CACHE_PREFIX + bbox.map((n) => n.toFixed(4)).join(',')
+}
+
+function readBboxCache(bbox: Bbox): BuildingFeature[] | null {
+  try {
+    const raw = localStorage.getItem(bboxCacheKey(bbox))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { ts: number; features: BuildingFeature[] }
+    if (Date.now() - parsed.ts > CACHE_TTL) {
+      localStorage.removeItem(bboxCacheKey(bbox))
+      return null
+    }
+    return parsed.features
+  } catch {
+    return null
+  }
+}
+
+function writeBboxCache(bbox: Bbox, features: BuildingFeature[]): void {
+  try {
+    localStorage.setItem(bboxCacheKey(bbox), JSON.stringify({ ts: Date.now(), features }))
+  } catch {
+    pruneBboxCache()
+  }
+}
+
+function pruneBboxCache(): void {
+  try {
+    const entries: { key: string; ts: number }[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (!k?.startsWith(CACHE_PREFIX)) continue
+      try {
+        const v = JSON.parse(localStorage.getItem(k) ?? '{}') as { ts?: number }
+        entries.push({ key: k, ts: v.ts ?? 0 })
+      } catch {
+        entries.push({ key: k, ts: 0 })
+      }
+    }
+    entries.sort((a, b) => b.ts - a.ts)
+    for (const e of entries.slice(CACHE_MAX)) localStorage.removeItem(e.key)
+  } catch {
+    /* ignore */
+  }
+}
 
 const LEVEL_HEIGHT = 3.2
 const MIN_AREA_M2 = 80
@@ -167,40 +235,78 @@ function enrichNames(features: BuildingFeature[], pois: PoiPoint[]): void {
 }
 
 /**
- * 运行时从 Overpass API 抓取 bbox 内建筑（多端点重试）。
- * 同时抓取范围内带名称的 POI 节点，用于给无名楼栋回填名称。
+ * 运行时从 Overpass API 抓取 bbox 内建筑。
+ * 全部镜像错峰并发（2.5s 间隔），首个成功者胜出并记住供下次优先；
+ * 结果按 bbox 本地缓存 24h；同时抓取范围内带名称的 POI 节点用于名称回填。
  */
 export async function fetchBuildingsByBbox(bbox: Bbox): Promise<BuildingFeature[]> {
+  const cached = readBboxCache(bbox)
+  if (cached) return cached
   const b = bbox.join(',')
-  const q =
-    `[out:json][timeout:60];(way["building"](${b});relation["building"](${b});` +
-    `node["name"]["office"](${b});node["name"]["company"](${b});node["name"]["shop"](${b});` +
-    `node["name"]["amenity"](${b});node["name"]["building"](${b});node["name"]["tourism"](${b});` +
-    `node["name"]["craft"](${b}););out geom qt;`
-  let lastErr: unknown
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'data=' + encodeURIComponent(q)
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const json = (await res.json()) as { elements?: OverpassElement[] }
-      const elements = json.elements ?? []
-      const pois: PoiPoint[] = elements
-        .filter((e) => e.type === 'node' && e.tags?.name && e.lat != null && e.lon != null)
-        .map((e) => ({ lng: e.lon as number, lat: e.lat as number, name: e.tags?.name ?? '', prio: poiPriority(e.tags ?? {}) }))
-        .filter((p) => p.name)
-      const features = elements
-        .map(featureFromElement)
-        .filter((f): f is BuildingFeature => f !== null)
-      enrichNames(features, pois)
-      return features
-    } catch (err) {
-      lastErr = err
-      await new Promise((r) => setTimeout(r, 1200))
-    }
-  }
-  throw lastErr instanceof Error ? lastErr : new Error('Overpass API 不可达')
+  const body =
+    'data=' +
+    encodeURIComponent(
+      `[out:json][timeout:60];(way["building"](${b});relation["building"](${b});` +
+        `node["name"]["office"](${b});node["name"]["company"](${b});node["name"]["shop"](${b});` +
+        `node["name"]["amenity"](${b});node["name"]["building"](${b});node["name"]["tourism"](${b});` +
+        `node["name"]["craft"](${b}););out geom qt;`
+    )
+  const endpoints = orderedEndpoints()
+  const settle = new AbortController()
+
+  return await new Promise<BuildingFeature[]>((resolve, reject) => {
+    let settled = false
+    const errors: string[] = []
+    endpoints.forEach((endpoint, i) => {
+      setTimeout(() => {
+        if (settled) return
+        tryEndpoint(endpoint, body, settle)
+          .then((features) => {
+            if (settled) return
+            settled = true
+            try {
+              localStorage.setItem(PREFERRED_KEY, endpoint)
+            } catch {
+              /* ignore */
+            }
+            writeBboxCache(bbox, features)
+            settle.abort()
+            resolve(features)
+          })
+          .catch((err) => {
+            if (settled) return
+            errors.push(err instanceof Error ? err.message : String(err))
+            if (errors.length >= endpoints.length) {
+              settled = true
+              reject(new Error('所有 Overpass 端点均超时或不可达，请稍后重试或使用抓取脚本'))
+            }
+          })
+      }, i * STAGGER_MS)
+    })
+  })
+}
+
+async function tryEndpoint(
+  endpoint: string,
+  body: string,
+  settle: AbortController
+): Promise<BuildingFeature[]> {
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+    signal: AbortSignal.any([AbortSignal.timeout(REQUEST_TIMEOUT), settle.signal])
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const json = (await res.json()) as { elements?: OverpassElement[] }
+  const elements = json.elements ?? []
+  const pois: PoiPoint[] = elements
+    .filter((e) => e.type === 'node' && e.tags?.name && e.lat != null && e.lon != null)
+    .map((e) => ({ lng: e.lon as number, lat: e.lat as number, name: e.tags?.name ?? '', prio: poiPriority(e.tags ?? {}) }))
+    .filter((p) => p.name)
+  const features = elements
+    .map(featureFromElement)
+    .filter((f): f is BuildingFeature => f !== null)
+  enrichNames(features, pois)
+  return features
 }
